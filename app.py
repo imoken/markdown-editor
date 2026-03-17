@@ -1,57 +1,103 @@
 import streamlit as st
 import json
+import requests
+from googleapiclient.discovery import build
 
-# ページ設定
+# --- ページ設定 ---
 st.set_page_config(page_title="Markdown Editor", layout="wide")
 st.title("Markdown Editor")
-st.markdown("---")
 
-# ==========================================
-# 連携ボタン（サイドバーに表示）
-# ==========================================
-CLIENT_ID = "324958658358-qjhl7skb65l425pv35k75g18p16768e2.apps.googleusercontent.com"
+# --- セキュリティ設定 (Streamlit Secretsから読み込み) ---
+# ※GitHubには書き込まず、Streamlit Cloudの管理画面で設定します
+try:
+    CLIENT_ID = st.secrets["CLIENT_ID"]
+    CLIENT_SECRET = st.secrets["CLIENT_SECRET"]
+except KeyError:
+    st.error("Secrets（CLIENT_ID, CLIENT_SECRET）が設定されていません。")
+    st.stop()
+
 REDIRECT_URI = "https://markdown-editor.streamlit.app/"
 
-# 完璧な連携URLを自動生成（drive.install権限を含む）
-auth_url = f"https://accounts.google.com/o/oauth2/v2/auth?client_id={CLIENT_ID}&redirect_uri={REDIRECT_URI}&response_type=code&scope=https://www.googleapis.com/auth/drive.install%20https://www.googleapis.com/auth/drive.file"
+# 認証用URLの生成
+auth_url = (
+    f"https://accounts.google.com/o/oauth2/v2/auth?"
+    f"client_id={CLIENT_ID}&"
+    f"redirect_uri={REDIRECT_URI}&"
+    f"response_type=code&"
+    f"scope=https://www.googleapis.com/auth/drive.file%20https://www.googleapis.com/auth/drive.install"
+)
 
+# --- 関数：認証コードをトークンに変換 ---
+def get_credentials(auth_code):
+    token_url = "https://oauth2.googleapis.com/token"
+    data = {
+        "code": auth_code,
+        "client_id": CLIENT_ID,
+        "client_secret": CLIENT_SECRET,
+        "redirect_uri": REDIRECT_URI,
+        "grant_type": "authorization_code",
+    }
+    res = requests.post(token_url, data=data)
+    return res.json()
+
+# --- 関数：ファイルの中身をダウンロード ---
+def download_file(file_id, access_token):
+    url = f"https://www.googleapis.com/drive/v3/files/{file_id}?alt=media"
+    headers = {"Authorization": f"Bearer {access_token}"}
+    res = requests.get(url, headers=headers)
+    if res.status_code == 200:
+        return res.text
+    else:
+        return f"エラー: ファイルの取得に失敗しました (Status: {res.status_code})"
+
+# --- メインロジック ---
 with st.sidebar:
-    st.markdown("### ⚙️ 初回設定")
-    st.markdown("アプリを右クリックメニューに出すためのボタンです。")
-    # リンクボタンを表示
-    st.markdown(f'<a href="{auth_url}" target="_blank" style="display: inline-block; padding: 10px 20px; background-color: #4285F4; color: white; text-decoration: none; border-radius: 5px; font-weight: bold;">🔗 Google Driveと連携する</a>', unsafe_allow_html=True)
-# ==========================================
+    st.markdown("### ⚙️ 接続設定")
+    st.markdown(f'[🔗 Google Driveと連携を更新]({auth_url})')
 
-# URLのパラメータを取得（Google Driveから渡される情報）
+# URLパラメータ(Google Driveからの情報)を取得
 query_params = st.query_params
 
-if "state" in query_params:
-    state_str = query_params["state"]
+if "state" in query_params and "code" in query_params:
     try:
-        state_dict = json.loads(state_str)
-        file_ids = state_dict.get("ids", [])
-        
-        if file_ids:
-            file_id = file_ids[0]
-            st.success(f"✅ Google Driveからファイルを受け付けました！ (ファイルID: {file_id})")
-            
-            dummy_content = f"# 成功！\nこれはファイルID `{file_id}` のプレビュー画面です。"
-            
-            if 'markdown_content' not in st.session_state:
-                st.session_state.markdown_content = dummy_content
+        # 1. パラメータの解析
+        state_dict = json.loads(query_params["state"])
+        file_id = state_dict.get("ids", [None])[0]
+        auth_code = query_params["code"]
 
+        # 2. アクセストークンの取得（セッションに保存）
+        if 'access_token' not in st.session_state:
+            tokens = get_credentials(auth_code)
+            if "access_token" in tokens:
+                st.session_state.access_token = tokens["access_token"]
+            else:
+                st.error("認証に失敗しました。サイドバーから再連携してください。")
+                st.stop()
+
+        # 3. ファイル内容の取得（初回のみ）
+        if file_id and 'markdown_content' not in st.session_state:
+            with st.spinner('ファイルを読み込み中...'):
+                content = download_file(file_id, st.session_state.access_token)
+                st.session_state.markdown_content = content
+
+        # 4. エディタ画面の表示
+        if 'markdown_content' in st.session_state:
             col1, col2 = st.columns(2)
             with col1:
-                st.markdown("### マークダウンソース")
-                edited_text = st.text_area(label="", value=st.session_state.markdown_content, height=400, label_visibility="collapsed")
-                st.session_state.markdown_content = edited_text
-                
+                st.markdown("### 📝 ソース")
+                # テキストエリアの変更を即反映
+                new_content = st.text_area(
+                    "editor", 
+                    value=st.session_state.markdown_content, 
+                    height=600, 
+                    label_visibility="collapsed"
+                )
+                st.session_state.markdown_content = new_content
             with col2:
-                st.markdown("### プレビュー")
+                st.markdown("### ✨ プレビュー")
                 st.markdown(st.session_state.markdown_content)
-
-    except json.JSONDecodeError:
-        st.error("Google Driveからのデータ読み込みに失敗しました。")
-
+                
+    except Exception as e:
+        st.error(f"予期せぬエラーが発生しました: {e}")
 else:
-    st.info("👈 左のサイドバーから「Google Driveと連携する」をクリックして初回設定を完了させてください。完了後、Googleドライブ上でファイルを選択し「アプリで開く」から起動できます。")
+    st.info("Google Driveでファイルを右クリックし、「アプリで開く」から起動してください。")
