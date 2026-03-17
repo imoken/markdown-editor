@@ -8,59 +8,73 @@ from googleapiclient.http import MediaIoBaseUpload
 from google.oauth2.credentials import Credentials
 
 # --- UI / Page Config ---
-# initial_sidebar_state="expanded" にして設定（歯車）を見えやすくします
-st.set_page_config(page_title="Editor", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="Editor", layout="wide", initial_sidebar_state="collapsed")
 
-# GitHub Light風のモダンCSS（白基調をデフォルトに）
+# 究極のミニマル・デザインCSS
 st.markdown("""
     <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400&display=swap');
     
-    /* 背景と文字色（白基調） */
-    .stApp {
-        background-color: #ffffff;
-        color: #24292f;
+    /* 余白を極限まで削り、キャンバスを広げる */
+    .block-container {
+        padding-top: 2rem !important;
+        padding-bottom: 0 !important;
+        max-width: 98% !important;
     }
 
-    /* エディタのスタイリング（枠線を青に固定） */
+    /* アプリ全体のベースカラー（純白） */
+    .stApp { background-color: #ffffff; }
+
+    /* --- エディタ側（左）のスタイル --- */
     .stTextArea textarea {
-        background-color: #f6f8fa !important;
+        background-color: transparent !important;
         color: #24292f !important;
-        border: 1px solid #d0d7de !important;
-        border-radius: 6px !important;
+        border: none !important; /* 枠線を完全に消去 */
+        border-right: 1px solid #eaecef !important; /* 左右を分ける極細の線のみ */
+        border-radius: 0 !important;
+        box-shadow: none !important;
         font-family: 'JetBrains Mono', monospace !important;
-        font-size: 14px !important;
-        line-height: 1.6 !important;
-        padding: 24px !important;
-        transition: border-color 0.2s, box-shadow 0.2s;
+        font-size: 15px !important;
+        line-height: 1.8 !important;
+        padding: 10px 30px 10px 10px !important;
+        height: 85vh !important; /* 画面の高さに自動フィット */
+        resize: none !important;
     }
     
-    /* 入力中の青い枠線（赤色を上書き） */
+    /* フォーカス時（入力中）は、区切り線だけが鮮やかなブルーになる */
     .stTextArea textarea:focus {
-        border-color: #0969da !important;
-        box-shadow: 0 0 0 3px rgba(9, 105, 218, 0.3) !important;
+        border-right: 2px solid #0969da !important;
+        box-shadow: none !important;
         outline: none !important;
     }
 
-    /* プレビューエリア */
-    .stMarkdown { color: #24292f; }
-    .stMarkdown h1, .stMarkdown h2 { border-bottom: 1px solid #d8dee4; padding-bottom: 8px; }
-
-    /* ステータス表示 */
-    .status-box {
-        display: flex; align-items: center; justify-content: flex-end;
-        gap: 6px; font-size: 12px; margin-bottom: 8px;
+    /* --- プレビュー側（右）のスタイル --- */
+    .stMarkdown {
+        padding: 10px 10px 10px 30px !important;
+        font-family: 'Inter', sans-serif !important;
+        color: #374151;
+        height: 85vh !important;
+        overflow-y: auto;
     }
-    .status-dot { height: 8px; width: 8px; border-radius: 50%; }
-    .dot-sync { background-color: #bf8700; animation: blink 1s infinite; }
-    .dot-done { background-color: #1a7f37; }
-    @keyframes blink { 0% { opacity: 0.3; } 50% { opacity: 1; } 100% { opacity: 0.3; } }
-
-    /* サイドバーのスタイル */
-    section[data-testid="stSidebar"] {
-        background-color: #f6f8fa !important;
-        border-right: 1px solid #d0d7de;
+    .stMarkdown h1, .stMarkdown h2 {
+        color: #111827;
+        font-weight: 600;
+        letter-spacing: -0.02em;
+        border-bottom: none; /* 下線をなくしモダンに */
+        margin-top: 1.5em;
     }
+    .stMarkdown p { font-size: 16px; line-height: 1.8; }
+    .stMarkdown code { background-color: #f3f4f6; color: #eb5757; border-radius: 4px; padding: 0.2em 0.4em; }
+
+    /* --- ステータス表示（極小・控えめ） --- */
+    .minimal-status {
+        text-align: right;
+        font-family: 'Inter', sans-serif;
+        font-size: 12px;
+        color: #9ca3af;
+        margin-bottom: 0.5rem;
+    }
+    .status-active { color: #0969da; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -100,13 +114,13 @@ def save_to_drive(file_id, access_token, content):
 # --- App Layout ---
 params = st.query_params
 
-# サイドバーに歯車アイコンと設定を配置
+# 左サイドバー（設定の隠し場所）
 with st.sidebar:
     st.markdown("### ⚙️ Settings")
     st.divider()
     auth_url = f"https://accounts.google.com/o/oauth2/v2/auth?client_id={CLIENT_ID}&redirect_uri={REDIRECT_URI}&response_type=code&scope=https://www.googleapis.com/auth/drive.file%20https://www.googleapis.com/auth/drive.install&access_type=offline&prompt=consent"
     st.link_button("🔄 Re-connect Drive", auth_url, use_container_width=True)
-    st.info("Files are auto-synced to Google Drive.")
+    st.caption("Press Cmd/Ctrl + Enter to sync & preview.")
 
 if "state" in params and "code" in params:
     try:
@@ -119,28 +133,30 @@ if "state" in params and "code" in params:
         if file_id and 'markdown_content' not in st.session_state:
             st.session_state.markdown_content = download_file(file_id, st.session_state.access_token) or ""
 
-        # 保存ステータス（右上に配置）
-        col_st = st.columns([1])[0]
-        with col_st:
-            if 'is_saving' in st.session_state and st.session_state.is_saving:
-                st.markdown('<div class="status-box"><span class="status-dot dot-sync"></span><span style="color:#bf8700">Saving...</span></div>', unsafe_allow_html=True)
-            elif 'last_saved' in st.session_state:
-                st.markdown(f'<div class="status-box"><span class="status-dot dot-done"></span><span style="color:#1a7f37">Synced at {st.session_state.last_saved}</span></div>', unsafe_allow_html=True)
+        # ヘッダー：極小のステータス表示
+        if 'is_saving' in st.session_state and st.session_state.is_saving:
+            st.markdown('<div class="minimal-status status-active">Syncing...</div>', unsafe_allow_html=True)
+        elif 'last_saved' in st.session_state:
+            st.markdown(f'<div class="minimal-status">Saved {st.session_state.last_saved}</div>', unsafe_allow_html=True)
+        else:
+            st.markdown('<div class="minimal-status">Ready</div>', unsafe_allow_html=True)
 
-        # エディタ & プレビュー
-        ed_col, pr_col = st.columns([1, 1], gap="medium")
+        # メイン画面：枠線のない左右分割キャンバス
+        ed_col, pr_col = st.columns([1, 1])
         
         with ed_col:
             content = st.text_area(
-                "editor", value=st.session_state.markdown_content,
-                height=850, label_visibility="collapsed"
+                "editor", 
+                value=st.session_state.markdown_content,
+                label_visibility="collapsed"
             )
             
+            # 変更検知と自動保存
             if content != st.session_state.markdown_content:
                 st.session_state.is_saving = True
                 if save_to_drive(file_id, st.session_state.access_token, content):
                     st.session_state.markdown_content = content
-                    st.session_state.last_saved = datetime.datetime.now().strftime("%H:%M:%S")
+                    st.session_state.last_saved = datetime.datetime.now().strftime("%H:%M")
                     st.session_state.is_saving = False
                     st.rerun()
 
@@ -148,6 +164,6 @@ if "state" in params and "code" in params:
             st.markdown(st.session_state.markdown_content)
 
     except Exception as e:
-        st.error("Authentication error. Please reopen from Google Drive.")
+        st.error("Session expired. Please reopen the file from Google Drive.")
 else:
     st.info("Google Driveの「アプリで開く」から起動してください。")
