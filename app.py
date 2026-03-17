@@ -10,55 +10,56 @@ from google.oauth2.credentials import Credentials
 # --- UI / Page Config ---
 st.set_page_config(page_title="Editor", layout="wide", initial_sidebar_state="collapsed")
 
-# カスタムCSS（洗練されたダークテーマ）
+# GitHubスタイルのモダンCSS（ライト/ダーク両対応）
 st.markdown("""
     <style>
-    /* 全体背景とフォント */
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=JetBrains+Mono&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono&display=swap');
     
-    .main { background-color: #0d1117; color: #adbac7; font-family: 'Inter', sans-serif; }
-    
-    /* エディタのスタイリング */
+    /* 基本フォント設定 */
+    html, body, [data-testid="stAppViewContainer"] {
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    }
+
+    /* エディタのスタイリング（GitHubカラー） */
     .stTextArea textarea {
-        background-color: #161b22 !important;
-        color: #adbac7 !important;
-        border: 1px solid #30363d !important;
-        border-radius: 12px !important;
+        background-color: var(--bg-color, transparent) !important;
+        color: var(--text-color, inherit) !important;
+        border: 1px solid var(--border-color, #d0d7de) !important;
+        border-radius: 6px !important;
         font-family: 'JetBrains Mono', monospace !important;
         font-size: 14px !important;
         line-height: 1.6 !important;
-        padding: 30px !important;
-        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        padding: 24px !important;
+        transition: border-color 0.2s cubic-bezier(0.3, 0, 0.5, 1), box-shadow 0.2s cubic-bezier(0.3, 0, 0.5, 1);
     }
     
-    /* フォーカス時の青いネオンエフェクト */
+    /* フォーカス時のGitHubブルー（Dark/Light共通） */
     .stTextArea textarea:focus {
-        border-color: #58a6ff !important;
-        box-shadow: 0 0 0 4px rgba(88, 166, 255, 0.15) !important;
+        border-color: #0969da !important;
+        box-shadow: 0 0 0 3px rgba(9, 105, 218, 0.3) !important;
         outline: none !important;
     }
 
-    /* プレビューエリア */
-    .stMarkdown { padding: 10px 20px; line-height: 1.8; }
-    h1, h2, h3 { color: #58a6ff !important; border-bottom: 1px solid #30363d; padding-bottom: 10px; }
-    code { background-color: #2d333b !important; padding: 2px 4px; border-radius: 4px; }
-
+    /* プレビューエリアの微調整 */
+    .stMarkdown { padding: 0 10px; }
+    .stMarkdown h1, .stMarkdown h2 { border-bottom: 1px solid var(--border-color, #d0d7de); padding-bottom: 8px; margin-top: 24px; }
+    
     /* ステータスバッジ */
-    .status-container {
+    .status-box {
         display: flex; align-items: center; justify-content: flex-end;
-        gap: 8px; margin-bottom: 15px; font-size: 12px;
+        gap: 6px; font-size: 12px; font-weight: 500; margin-bottom: 10px;
     }
-    .dot { height: 8px; width: 8px; border-radius: 50%; display: inline-block; }
-    .dot-saving { background-color: #f2cc60; animation: blink 1s infinite; }
-    .dot-saved { background-color: #3fb950; }
+    .status-dot { height: 7px; width: 7px; border-radius: 50%; }
+    .dot-sync { background-color: #bf8700; animation: pulse 1.2s infinite; }
+    .dot-done { background-color: #1a7f37; }
+    @keyframes pulse { 0% { opacity: 0.4; } 50% { opacity: 1; } 100% { opacity: 0.4; } }
 
-    @keyframes blink { 0% { opacity: 0.2; } 50% { opacity: 1; } 100% { opacity: 0.2; } }
-
-    /* 不要なUIを隠す */
+    /* ツールバーとフッターの除去 */
     div[data-testid="stToolbar"] { display: none; }
     footer { visibility: hidden; }
-    section[data-testid="stSidebar"] { background-color: #010409 !important; border-right: 1px solid #30363d; }
+    
+    /* サイドバーのGitHub風ダークトーン */
+    section[data-testid="stSidebar"] { border-right: 1px solid var(--border-color, #d0d7de); }
     </style>
     """, unsafe_allow_html=True)
 
@@ -109,44 +110,44 @@ if "state" in params and "code" in params:
         if file_id and 'markdown_content' not in st.session_state:
             st.session_state.markdown_content = download_file(file_id, st.session_state.access_token) or ""
 
-        # Header: Status Display
-        status_col1, status_col2 = st.columns([1, 1])
-        with status_col2:
+        # Header Area
+        st.write("") # Spacer
+        col_status = st.columns([1])[0]
+        with col_status:
             if 'is_saving' in st.session_state and st.session_state.is_saving:
-                st.markdown('<div class="status-container"><span class="dot dot-saving"></span><span style="color:#f2cc60">Syncing...</span></div>', unsafe_allow_html=True)
+                st.markdown('<div class="status-box"><span class="status-dot dot-sync"></span><span style="color:#bf8700">Syncing to Drive...</span></div>', unsafe_allow_html=True)
             elif 'last_saved' in st.session_state:
-                st.markdown(f'<div class="status-container"><span class="dot dot-saved"></span><span style="color:#3fb950">Cloud Synced ({st.session_state.last_saved})</span></div>', unsafe_allow_html=True)
+                st.markdown(f'<div class="status-box"><span class="status-dot dot-done"></span><span style="color:#1a7f37">Synced at {st.session_state.last_saved}</span></div>', unsafe_allow_html=True)
 
-        # Main: Editor & Preview
-        ed_col, pr_col = st.columns([1, 1], gap="large")
+        # Editor & Preview Column
+        ed_col, pr_col = st.columns([1, 1], gap="medium")
         
         with ed_col:
-            # ブラウザの高さに合わせて自動調整 (vh = viewport height)
             content = st.text_area(
                 "editor", value=st.session_state.markdown_content,
-                height=800, label_visibility="collapsed"
+                height=850, label_visibility="collapsed"
             )
             
             if content != st.session_state.markdown_content:
                 st.session_state.is_saving = True
                 if save_to_drive(file_id, st.session_state.access_token, content):
                     st.session_state.markdown_content = content
-                    st.session_state.last_saved = datetime.datetime.now().strftime("%H:%M")
+                    st.session_state.last_saved = datetime.datetime.now().strftime("%H:%M:%S")
                     st.session_state.is_saving = False
                     st.rerun()
 
         with pr_col:
             st.markdown(st.session_state.markdown_content)
 
-        # Sidebar Settings (Gear Icon functionality)
+        # Sidebar Settings
         with st.sidebar:
-            st.markdown("### ⚙️ Editor Settings")
+            st.markdown("### ⚙️ Settings")
+            st.caption("Theme: System default (Light/Dark)")
             st.divider()
             auth_url = f"https://accounts.google.com/o/oauth2/v2/auth?client_id={CLIENT_ID}&redirect_uri={REDIRECT_URI}&response_type=code&scope=https://www.googleapis.com/auth/drive.file%20https://www.googleapis.com/auth/drive.install&access_type=offline&prompt=consent"
-            st.link_button("🔄 Reset Connection", auth_url, use_container_width=True)
-            st.info("Files are automatically synced to Google Drive on every change.")
+            st.link_button("🔄 Re-authenticate", auth_url, use_container_width=True)
 
     except Exception as e:
-        st.error("Authentication expired. Please reopen from Google Drive.")
+        st.error("Session expired. Please reopen from Google Drive.")
 else:
     st.info("Google Driveの「アプリで開く」から起動してください。")
