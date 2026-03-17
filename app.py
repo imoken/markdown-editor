@@ -1,14 +1,11 @@
 import streamlit as st
 import json
 import requests
-from googleapiclient.discovery import build
 
 # --- ページ設定 ---
 st.set_page_config(page_title="Markdown Editor", layout="wide")
-st.title("Markdown Editor")
 
 # --- セキュリティ設定 (Streamlit Secretsから読み込み) ---
-# ※GitHubには書き込まず、Streamlit Cloudの管理画面で設定します
 try:
     CLIENT_ID = st.secrets["CLIENT_ID"]
     CLIENT_SECRET = st.secrets["CLIENT_SECRET"]
@@ -40,13 +37,14 @@ def get_credentials(auth_code):
     res = requests.post(token_url, data=data)
     return res.json()
 
-# --- 関数：ファイルの中身をダウンロード ---
+# --- 関数：ファイルの中身をダウンロード（文字化け対策版） ---
 def download_file(file_id, access_token):
     url = f"https://www.googleapis.com/drive/v3/files/{file_id}?alt=media"
     headers = {"Authorization": f"Bearer {access_token}"}
     res = requests.get(url, headers=headers)
     if res.status_code == 200:
-        return res.text
+        # 明示的に utf-8 でデコードすることで文字化けを防ぎます
+        return res.content.decode('utf-8')
     else:
         return f"エラー: ファイルの取得に失敗しました (Status: {res.status_code})"
 
@@ -65,7 +63,7 @@ if "state" in query_params and "code" in query_params:
         file_id = state_dict.get("ids", [None])[0]
         auth_code = query_params["code"]
 
-        # 2. アクセストークンの取得（セッションに保存）
+        # 2. アクセストークンの取得
         if 'access_token' not in st.session_state:
             tokens = get_credentials(auth_code)
             if "access_token" in tokens:
@@ -74,28 +72,22 @@ if "state" in query_params and "code" in query_params:
                 st.error("認証に失敗しました。サイドバーから再連携してください。")
                 st.stop()
 
-        # 3. ファイル内容の取得（初回のみ）
+        # 3. ファイル内容の取得
         if file_id and 'markdown_content' not in st.session_state:
             with st.spinner('ファイルを読み込み中...'):
                 content = download_file(file_id, st.session_state.access_token)
                 st.session_state.markdown_content = content
 
-        # 4. エディタ画面の表示
+        # 4. エディタ画面の表示（プレビューなし・ヘッダーなし）
         if 'markdown_content' in st.session_state:
-            col1, col2 = st.columns(2)
-            with col1:
-                st.markdown("### 📝 ソース")
-                # テキストエリアの変更を即反映
-                new_content = st.text_area(
-                    "editor", 
-                    value=st.session_state.markdown_content, 
-                    height=600, 
-                    label_visibility="collapsed"
-                )
-                st.session_state.markdown_content = new_content
-            with col2:
-                st.markdown("### ✨ プレビュー")
-                st.markdown(st.session_state.markdown_content)
+            # 画面いっぱいにエディタを表示
+            new_content = st.text_area(
+                label="Markdown Editor", 
+                value=st.session_state.markdown_content, 
+                height=800, 
+                label_visibility="collapsed" # ラベルを隠してさらにスッキリ
+            )
+            st.session_state.markdown_content = new_content
                 
     except Exception as e:
         st.error(f"予期せぬエラーが発生しました: {e}")
