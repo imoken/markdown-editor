@@ -10,19 +10,48 @@ from google.oauth2.credentials import Credentials
 # --- UI設定 ---
 st.set_page_config(page_title="Editor", layout="wide", initial_sidebar_state="collapsed")
 
-# モダンなデザインのためのCSS
+# モダンなUIとアニメーションのCSS
 st.markdown("""
     <style>
+    /* メイン背景 */
     .main { background-color: #0e1117; }
+    
+    /* エディタのスタイル（フォーカス時にブルー） */
     .stTextArea textarea {
-        background-color: #161b22;
-        color: #c9d1d9;
-        border: 1px solid #30363d;
-        border-radius: 8px;
-        font-family: 'Source Code Pro', monospace;
-        padding: 20px;
+        background-color: #161b22 !important;
+        color: #c9d1d9 !important;
+        border: 1px solid #30363d !important;
+        border-radius: 8px !important;
+        font-family: 'JetBrains Mono', 'Source Code Pro', monospace !important;
+        padding: 20px !important;
+        transition: border-color 0.2s ease, box-shadow 0.2s ease;
     }
+    .stTextArea textarea:focus {
+        border-color: #58a6ff !important;
+        box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.3) !important;
+        outline: none !important;
+    }
+
+    /* プレビューエリア */
     .stMarkdown { color: #c9d1d9; }
+    
+    /* 保存中アニメーション */
+    @keyframes pulse {
+        0% { opacity: 1; }
+        50% { opacity: 0.5; }
+        100% { opacity: 1; }
+    }
+    .saving-status {
+        color: #58a6ff;
+        font-size: 0.85rem;
+        animation: pulse 1s infinite;
+    }
+    .saved-status {
+        color: #3fb950;
+        font-size: 0.85rem;
+    }
+
+    /* 不要な要素の非表示 */
     div[data-testid="stToolbar"] { display: none; }
     footer { visibility: hidden; }
     </style>
@@ -78,40 +107,46 @@ if "state" in query_params and "code" in query_params:
             content = download_file(file_id, st.session_state.access_token)
             st.session_state.markdown_content = content if content is not None else ""
 
-        # ヘッダーエリア
-        head_col1, head_col2 = st.columns([8, 2])
-        with head_col2:
-            if 'last_saved' in st.session_state:
-                st.caption(f"✓ Saved at {st.session_state.last_saved}")
+        # サイドバー（設定）
+        with st.sidebar:
+            st.markdown("### ⚙️ Settings")
+            st.divider()
+            # ダークモードはStreamlit標準機能で切り替え可能なため、ここでは連携設定を配置
+            auth_url = f"https://accounts.google.com/o/oauth2/v2/auth?client_id={CLIENT_ID}&redirect_uri={REDIRECT_URI}&response_type=code&scope=https://www.googleapis.com/auth/drive.file%20https://www.googleapis.com/auth/drive.install&access_type=offline&prompt=consent"
+            st.link_button("Re-connect Google Drive", auth_url)
+            st.divider()
+            st.caption("Markdown Editor v2.1")
 
-        # エディタとプレビュー
+        # ステータス表示エリア
+        head_col1, head_col2 = st.columns([9, 1])
+        with head_col2:
+            if 'is_saving' in st.session_state and st.session_state.is_saving:
+                st.markdown('<p class="saving-status">Saving...</p>', unsafe_allow_html=True)
+            elif 'last_saved' in st.session_state:
+                st.markdown(f'<p class="saved-status">✓ {st.session_state.last_saved}</p>', unsafe_allow_html=True)
+
+        # エディタとプレビュー（縦幅を画面に合わせるため height=800以上に設定）
         edit_col, prev_col = st.columns(2)
         
         with edit_col:
+            # 入力中にブルーになるテキストエリア
             edited_content = st.text_area(
                 "editor", value=st.session_state.markdown_content,
                 height=850, label_visibility="collapsed"
             )
             
             if edited_content != st.session_state.markdown_content:
+                st.session_state.is_saving = True
                 if save_to_drive(file_id, st.session_state.access_token, edited_content):
                     st.session_state.markdown_content = edited_content
-                    st.session_state.last_saved = datetime.datetime.now().strftime("%H:%M:%S")
+                    st.session_state.last_saved = datetime.datetime.now().strftime("%H:%M")
+                    st.session_state.is_saving = False
                     st.rerun()
 
         with prev_col:
             st.markdown(st.session_state.markdown_content)
 
-        # サイドバーの設定（下部に配置）
-        with st.sidebar:
-            st.title("Settings")
-            st.divider()
-            auth_url = f"https://accounts.google.com/o/oauth2/v2/auth?client_id={CLIENT_ID}&redirect_uri={REDIRECT_URI}&response_type=code&scope=https://www.googleapis.com/auth/drive.file%20https://www.googleapis.com/auth/drive.install&access_type=offline&prompt=consent"
-            st.link_button("Re-connect Google Drive", auth_url)
-            st.caption("Markdown Editor v2.0")
-
     except Exception as e:
-        st.error(f"Connection error. Please try opening the file again from Google Drive.")
+        st.error(f"Please reopen the file from Google Drive.")
 else:
-    st.empty()
-    st.info("Please open a file from Google Drive menu 'Open with'.")
+    st.info("Google Driveの「アプリで開く」から起動してください。")
