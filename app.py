@@ -8,58 +8,59 @@ from googleapiclient.http import MediaIoBaseUpload
 from google.oauth2.credentials import Credentials
 
 # --- UI / Page Config ---
-st.set_page_config(page_title="Editor", layout="wide", initial_sidebar_state="collapsed")
+# initial_sidebar_state="expanded" にして設定（歯車）を見えやすくします
+st.set_page_config(page_title="Editor", layout="wide", initial_sidebar_state="expanded")
 
-# GitHubスタイルのモダンCSS（ライト/ダーク両対応）
+# GitHub Light風のモダンCSS（白基調をデフォルトに）
 st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono&display=swap');
     
-    /* 基本フォント設定 */
-    html, body, [data-testid="stAppViewContainer"] {
-        font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    /* 背景と文字色（白基調） */
+    .stApp {
+        background-color: #ffffff;
+        color: #24292f;
     }
 
-    /* エディタのスタイリング（GitHubカラー） */
+    /* エディタのスタイリング（枠線を青に固定） */
     .stTextArea textarea {
-        background-color: var(--bg-color, transparent) !important;
-        color: var(--text-color, inherit) !important;
-        border: 1px solid var(--border-color, #d0d7de) !important;
+        background-color: #f6f8fa !important;
+        color: #24292f !important;
+        border: 1px solid #d0d7de !important;
         border-radius: 6px !important;
         font-family: 'JetBrains Mono', monospace !important;
         font-size: 14px !important;
         line-height: 1.6 !important;
         padding: 24px !important;
-        transition: border-color 0.2s cubic-bezier(0.3, 0, 0.5, 1), box-shadow 0.2s cubic-bezier(0.3, 0, 0.5, 1);
+        transition: border-color 0.2s, box-shadow 0.2s;
     }
     
-    /* フォーカス時のGitHubブルー（Dark/Light共通） */
+    /* 入力中の青い枠線（赤色を上書き） */
     .stTextArea textarea:focus {
         border-color: #0969da !important;
         box-shadow: 0 0 0 3px rgba(9, 105, 218, 0.3) !important;
         outline: none !important;
     }
 
-    /* プレビューエリアの微調整 */
-    .stMarkdown { padding: 0 10px; }
-    .stMarkdown h1, .stMarkdown h2 { border-bottom: 1px solid var(--border-color, #d0d7de); padding-bottom: 8px; margin-top: 24px; }
-    
-    /* ステータスバッジ */
+    /* プレビューエリア */
+    .stMarkdown { color: #24292f; }
+    .stMarkdown h1, .stMarkdown h2 { border-bottom: 1px solid #d8dee4; padding-bottom: 8px; }
+
+    /* ステータス表示 */
     .status-box {
         display: flex; align-items: center; justify-content: flex-end;
-        gap: 6px; font-size: 12px; font-weight: 500; margin-bottom: 10px;
+        gap: 6px; font-size: 12px; margin-bottom: 8px;
     }
-    .status-dot { height: 7px; width: 7px; border-radius: 50%; }
-    .dot-sync { background-color: #bf8700; animation: pulse 1.2s infinite; }
+    .status-dot { height: 8px; width: 8px; border-radius: 50%; }
+    .dot-sync { background-color: #bf8700; animation: blink 1s infinite; }
     .dot-done { background-color: #1a7f37; }
-    @keyframes pulse { 0% { opacity: 0.4; } 50% { opacity: 1; } 100% { opacity: 0.4; } }
+    @keyframes blink { 0% { opacity: 0.3; } 50% { opacity: 1; } 100% { opacity: 0.3; } }
 
-    /* ツールバーとフッターの除去 */
-    div[data-testid="stToolbar"] { display: none; }
-    footer { visibility: hidden; }
-    
-    /* サイドバーのGitHub風ダークトーン */
-    section[data-testid="stSidebar"] { border-right: 1px solid var(--border-color, #d0d7de); }
+    /* サイドバーのスタイル */
+    section[data-testid="stSidebar"] {
+        background-color: #f6f8fa !important;
+        border-right: 1px solid #d0d7de;
+    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -99,6 +100,14 @@ def save_to_drive(file_id, access_token, content):
 # --- App Layout ---
 params = st.query_params
 
+# サイドバーに歯車アイコンと設定を配置
+with st.sidebar:
+    st.markdown("### ⚙️ Settings")
+    st.divider()
+    auth_url = f"https://accounts.google.com/o/oauth2/v2/auth?client_id={CLIENT_ID}&redirect_uri={REDIRECT_URI}&response_type=code&scope=https://www.googleapis.com/auth/drive.file%20https://www.googleapis.com/auth/drive.install&access_type=offline&prompt=consent"
+    st.link_button("🔄 Re-connect Drive", auth_url, use_container_width=True)
+    st.info("Files are auto-synced to Google Drive.")
+
 if "state" in params and "code" in params:
     try:
         state_dict = json.loads(params["state"])
@@ -110,16 +119,15 @@ if "state" in params and "code" in params:
         if file_id and 'markdown_content' not in st.session_state:
             st.session_state.markdown_content = download_file(file_id, st.session_state.access_token) or ""
 
-        # Header Area
-        st.write("") # Spacer
-        col_status = st.columns([1])[0]
-        with col_status:
+        # 保存ステータス（右上に配置）
+        col_st = st.columns([1])[0]
+        with col_st:
             if 'is_saving' in st.session_state and st.session_state.is_saving:
-                st.markdown('<div class="status-box"><span class="status-dot dot-sync"></span><span style="color:#bf8700">Syncing to Drive...</span></div>', unsafe_allow_html=True)
+                st.markdown('<div class="status-box"><span class="status-dot dot-sync"></span><span style="color:#bf8700">Saving...</span></div>', unsafe_allow_html=True)
             elif 'last_saved' in st.session_state:
                 st.markdown(f'<div class="status-box"><span class="status-dot dot-done"></span><span style="color:#1a7f37">Synced at {st.session_state.last_saved}</span></div>', unsafe_allow_html=True)
 
-        # Editor & Preview Column
+        # エディタ & プレビュー
         ed_col, pr_col = st.columns([1, 1], gap="medium")
         
         with ed_col:
@@ -139,15 +147,7 @@ if "state" in params and "code" in params:
         with pr_col:
             st.markdown(st.session_state.markdown_content)
 
-        # Sidebar Settings
-        with st.sidebar:
-            st.markdown("### ⚙️ Settings")
-            st.caption("Theme: System default (Light/Dark)")
-            st.divider()
-            auth_url = f"https://accounts.google.com/o/oauth2/v2/auth?client_id={CLIENT_ID}&redirect_uri={REDIRECT_URI}&response_type=code&scope=https://www.googleapis.com/auth/drive.file%20https://www.googleapis.com/auth/drive.install&access_type=offline&prompt=consent"
-            st.link_button("🔄 Re-authenticate", auth_url, use_container_width=True)
-
     except Exception as e:
-        st.error("Session expired. Please reopen from Google Drive.")
+        st.error("Authentication error. Please reopen from Google Drive.")
 else:
     st.info("Google Driveの「アプリで開く」から起動してください。")
